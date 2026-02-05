@@ -156,8 +156,8 @@ export const DataAdmin: React.FC = () => {
       );
       
       // 2. Cost Analysis
-      const topMaterials = [...materials].sort((a, b) => b.cost - a.cost).slice(0, 5);
-      const avgLaborCost = laborCategories.reduce((acc, curr) => acc + curr.basicHourlyRate, 0) / (laborCategories.length || 1);
+      const topMaterials = [...materials].sort((a, b) => (b.cost || 0) - (a.cost || 0)).slice(0, 5);
+      const avgLaborCost = laborCategories.reduce((acc, curr) => acc + (curr.basicHourlyRate || 0), 0) / (laborCategories.length || 1);
       
       // 3. Distribution
       const materialsByCategory = materials.reduce((acc, curr) => {
@@ -174,7 +174,7 @@ export const DataAdmin: React.FC = () => {
       // 4. Labor Cost Chart Data
       const laborChartData = laborCategories.map(l => ({
           name: l.role,
-          Costo: (l.basicHourlyRate * (1 + (l.socialChargesPercent + l.insurancePercent)/100))
+          Costo: ((l.basicHourlyRate || 0) * (1 + ((l.socialChargesPercent || 0) + (l.insurancePercent || 0))/100))
       })).sort((a,b) => b.Costo - a.Costo);
 
       return {
@@ -1542,123 +1542,4 @@ export const DataAdmin: React.FC = () => {
                                                 >
                                                     {reportStats.distributionData.map((entry, index) => (
                                                         <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                                                    ))}
-                                                </Pie>
-                                                <Legend wrapperStyle={{ fontSize: '10px' }} layout="vertical" align="right" />
-                                            </PieChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                    <div className="border border-slate-200 rounded p-4">
-                                        <h3 className="text-xs font-bold text-slate-500 uppercase mb-2 text-center">Costo Mano de Obra (Hora)</h3>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart data={reportStats.laborChartData} layout="vertical">
-                                                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                                                <XAxis type="number" fontSize={8} tickFormatter={(v) => `$${v}`} />
-                                                <YAxis dataKey="name" type="category" width={80} fontSize={8} />
-                                                <Bar dataKey="Costo" fill="#10b981" barSize={15} radius={[0, 4, 4, 0]} isAnimationActive={false} />
-                                            </BarChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* SECTION 3: STATS TABLES */}
-                        {reportConfig.includeStats && (
-                            <div className="grid grid-cols-2 gap-8 break-inside-avoid">
-                                <div>
-                                    <h3 className="text-sm font-bold text-slate-700 mb-2 uppercase">Materiales Más Costosos</h3>
-                                    <table className="w-full text-xs text-left border border-slate-200">
-                                        <thead className="bg-slate-100">
-                                            <tr>
-                                                <th className="p-2 border-b">Nombre</th>
-                                                <th className="p-2 border-b text-right">Costo Unit.</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {reportStats.topMaterials.map((m, i) => (
-                                                <tr key={m.id} className="border-b last:border-0">
-                                                    <td className="p-2 truncate">{m.name}</td>
-                                                    <td className="p-2 text-right font-mono">${m.cost.toFixed(2)}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div>
-                                    <h3 className="text-sm font-bold text-slate-700 mb-2 uppercase">Métricas Generales</h3>
-                                    <div className="space-y-2">
-                                        <div className="flex justify-between p-2 bg-slate-50 rounded border border-slate-200">
-                                            <span className="text-xs text-slate-500">Total Materiales</span>
-                                            <span className="text-xs font-bold">{reportStats.totalMaterials}</span>
-                                        </div>
-                                        <div className="flex justify-between p-2 bg-slate-50 rounded border border-slate-200">
-                                            <span className="text-xs text-slate-500">Total Tareas (APU)</span>
-                                            <span className="text-xs font-bold">{reportStats.totalTasks}</span>
-                                        </div>
-                                        <div className="flex justify-between p-2 bg-slate-50 rounded border border-slate-200">
-                                            <span className="text-xs text-slate-500">Costo Promedio Mano Obra</span>
-                                            <span className="text-xs font-bold font-mono">${reportStats.avgLaborCost.toFixed(2)}/h</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* SECTION 4: FULL LIST */}
-                        {reportConfig.includeFullList && (
-                            <div>
-                                <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2 border-l-4 border-slate-500 pl-3 break-before-page">
-                                    <ListChecks size={20} className="text-slate-500" /> Listado Completo de Tareas y APU
-                                </h2>
-                                <table className="w-full text-xs text-left border border-slate-200">
-                                    <thead className="bg-slate-100">
-                                        <tr>
-                                            <th className="p-2 border">Tarea</th>
-                                            <th className="p-2 border">Unidad</th>
-                                            <th className="p-2 border text-right">Rend.</th>
-                                            <th className="p-2 border text-right">Costo MO</th>
-                                            <th className="p-2 border text-right">Costo Mat.</th>
-                                            <th className="p-2 border text-right font-bold">Total Unit.</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {tasks.map((t, i) => {
-                                            const analysis = calculateUnitPrice(t, yieldsIndex, materialsMap, toolYieldsIndex, toolsMap, taskCrewYieldsIndex, crewsMap, laborCategoriesMap);
-                                            return (
-                                                <tr key={t.id} className="border-b last:border-0 break-inside-avoid">
-                                                    <td className="p-2 border-r">{t.name}</td>
-                                                    <td className="p-2 border-r text-center">{t.unit}</td>
-                                                    <td className="p-2 border-r text-right">{t.dailyYield}</td>
-                                                    <td className="p-2 border-r text-right">${analysis.laborCost.toFixed(2)}</td>
-                                                    <td className="p-2 border-r text-right">${analysis.materialCost.toFixed(2)}</td>
-                                                    <td className="p-2 text-right font-bold">${analysis.totalUnitCost.toFixed(2)}</td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-
-                        <div className="mt-8 pt-4 border-t border-slate-200 text-center text-[10px] text-slate-400">
-                            Auditoría generada el {new Date().toLocaleString()} por Construsoft ERP
-                        </div>
-                    </div>
-                </div>
-             </div>
-          </div>
-      )}
-
-      {/* --- SMART IMPORT MODAL --- */}
-      {showSmartImport && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col h-[500px]">
-                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                    <h3 className="font-bold text-lg text-slate-800">Importar Excel</h3>
-                    <button onClick={() => setShowSmartImport(false)}><X className="text-slate-400 hover:text-slate-600" /></button>
-                </div>
-                <div className="p-4 flex-1 flex flex-col gap-2">
-                    <div className="text-xs text-slate-500 bg-blue-50 p-2 rounded border border-blue-100">
-                        <p className="font-bold text-blue-700 mb-1">Instrucciones de Copiado (Excel):</p>
-                        <p>Copie las celdas de su Excel y péguelas debajo. El orden
+                               

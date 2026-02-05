@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ERPProvider, useERP } from './context/ERPContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/Layout';
@@ -19,10 +19,11 @@ import { MeasurementSheetComponent } from './components/MeasurementSheet';
 import { QualityControl } from './components/QualityControl';
 import { ProjectHub } from './components/ProjectHub';
 import { APUBuilder } from './components/APUBuilder';
+import { ProtectedLayout } from './components/ProtectedLayout';
 import { Role } from './types';
 
 // Route Protection Component (Middleware Simulation)
-const ProtectedRoute: React.FC<{ 
+const RouteGuard: React.FC<{ 
   allowedRoles: Role[], 
   children: React.ReactNode 
 }> = ({ allowedRoles, children }) => {
@@ -52,48 +53,54 @@ const AppContent = () => {
 
   // STATE 2: Authenticated but No Project Selected -> HUB
   if (!activeProjectId) {
-      return <ProjectHub />;
+      return (
+        <ProtectedLayout>
+          <ProjectHub />
+        </ProtectedLayout>
+      );
   }
 
   // STATE 3: Active Project (Main Layout)
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard': 
-        return <ProtectedRoute allowedRoles={['admin', 'engineering', 'foreman', 'client']}><Dashboard /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin', 'engineering', 'foreman', 'client']}><Dashboard /></RouteGuard>;
       case 'management': 
-        return <ProtectedRoute allowedRoles={['admin', 'engineering', 'client']}><ManagementPanel /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin', 'engineering', 'client']}><ManagementPanel /></RouteGuard>;
       case 'subcontractors': 
-        return <ProtectedRoute allowedRoles={['admin', 'engineering']}><Subcontractors /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin', 'engineering']}><Subcontractors /></RouteGuard>;
       case 'budget': 
-        return <ProtectedRoute allowedRoles={['admin', 'engineering']}><BudgetEditor /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin', 'engineering']}><BudgetEditor /></RouteGuard>;
       case 'apu':
-        return <ProtectedRoute allowedRoles={['admin', 'engineering']}><APUBuilder /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin', 'engineering']}><APUBuilder /></RouteGuard>;
       case 'grid': 
-        return <ProtectedRoute allowedRoles={['admin', 'engineering']}><BudgetGrid /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin', 'engineering']}><BudgetGrid /></RouteGuard>;
       case 'planning': 
-        return <ProtectedRoute allowedRoles={['admin', 'engineering', 'foreman']}><Planning /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin', 'engineering', 'foreman']}><Planning /></RouteGuard>;
       case 'reception': 
-        return <ProtectedRoute allowedRoles={['admin', 'foreman']}><MaterialReception /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin', 'foreman']}><MaterialReception /></RouteGuard>;
       case 'tools': 
-        return <ProtectedRoute allowedRoles={['admin', 'engineering']}><ToolsManager /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin', 'engineering']}><ToolsManager /></RouteGuard>;
       case 'admin': 
-        return <ProtectedRoute allowedRoles={['admin', 'engineering']}><DataAdmin /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin', 'engineering']}><DataAdmin /></RouteGuard>;
       case 'settings': 
-        return <ProtectedRoute allowedRoles={['admin']}><ProjectSettings /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin']}><ProjectSettings /></RouteGuard>;
       case 'documents':
-        return <ProtectedRoute allowedRoles={['admin', 'engineering', 'foreman', 'client']}><DocumentManager /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin', 'engineering', 'foreman', 'client']}><DocumentManager /></RouteGuard>;
       case 'measurements':
-        return <ProtectedRoute allowedRoles={['admin', 'engineering']}><MeasurementSheetComponent /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin', 'engineering']}><MeasurementSheetComponent /></RouteGuard>;
       case 'quality':
-        return <ProtectedRoute allowedRoles={['admin', 'engineering', 'foreman']}><QualityControl /></ProtectedRoute>;
+        return <RouteGuard allowedRoles={['admin', 'engineering', 'foreman']}><QualityControl /></RouteGuard>;
       default: return <Dashboard />;
     }
   };
 
   return (
-    <Layout activeTab={activeTab} setActiveTab={setActiveTab}>
-      {renderContent()}
-    </Layout>
+    <ProtectedLayout>
+      <Layout activeTab={activeTab} setActiveTab={setActiveTab}>
+        {renderContent()}
+      </Layout>
+    </ProtectedLayout>
   );
 };
 

@@ -1,10 +1,11 @@
-
 // Definición de las entidades base del sistema
 
 export type Role = 'admin' | 'engineering' | 'foreman' | 'client';
 
 // NEW: Cost Families based on User Request
 export type CostFamily = 'MATERIAL' | 'MANO DE OBRA' | 'EQUIPOS' | 'SUBCONTRATO' | 'COSTO INDIRECTO';
+
+export type ResourceType = 'MATERIAL' | 'EQUIPMENT';
 
 export interface User {
   id: string;
@@ -42,6 +43,11 @@ export interface Material {
   description?: string;
   commercialFormat?: string; // e.g. "Bolsa 50kg", "Barra 12m"
   wastePercent?: number; // Standard waste percentage
+  
+  // Engineering Props (Supabase compatibility)
+  type?: ResourceType;
+  basePrice?: number;
+  updatedAt?: string;
 }
 
 export interface Tool {
@@ -79,7 +85,25 @@ export interface Crew {
   composition: CrewComposition[]; // Lista de integrantes
 }
 
-// --- STANDARD YIELDS SCHEMA (CHANDÍAS BASELINE) ---
+// --- NEW ENGINEERING TYPES (Supabase / Advanced APU) ---
+export interface ResourceYield {
+  resourceId: string; // FK a Resource
+  quantity: number; // Cantidad técnica neta
+  wastePercentage: number; // % Desperdicio (e.g., 5 para 5%)
+}
+
+export interface LaborYield {
+  laborProfileId: string; // FK a LaborProfile
+  hoursPerUnit: number; // Horas Hombre por unidad de tarea (hh/u)
+  crewCount: number; // Cantidad de personas de este perfil en la cuadrilla típica
+}
+
+export interface EngineeringSpecs {
+  resources: ResourceYield[]; // Materiales y Equipos
+  labor: LaborYield[]; // Mano de Obra
+}
+
+// --- STANDARD YIELDS SCHEMA (CHANDÍAS BASELINE - Legacy & Hybrid) ---
 export interface StandardYields {
     materials?: { materialId: string; quantity: number; wastePercent: number }[];
     labor?: { laborCategoryId: string; hhPerUnit: number }[]; // HH por unidad
@@ -108,10 +132,16 @@ export interface Task {
   yieldHH?: number; // Rendimiento en Horas Hombre por Unidad (hh/u)
   defaultPredecessorId?: string; // Sugerencia de secuencia lógica (precedenciaId)
 
-  // NEW: Baseline for Comparison (The "Standard" vs the "Real" in Context)
+  // Legacy Baseline
   standardYields?: StandardYields; 
 
-  // NEW: Virtual properties for Sync (Pass-through objects)
+  // NEW: Advanced Engineering (Supabase Structure)
+  engineering?: {
+    standard: EngineeringSpecs; // Rendimientos Teóricos (Chandías)
+    real: EngineeringSpecs; // Rendimientos Reales (Ajuste de Obra)
+  };
+
+  // Virtual properties for Sync (Pass-through objects for UI state)
   materialsYield?: TaskYield[];
   equipmentYield?: TaskToolYield[];
   laborYield?: TaskCrewYield[]; 
@@ -191,6 +221,12 @@ export interface ProjectCrewDefinition {
     count: number;
 }
 
+export interface ProjectConfig {
+    workdayHours: number;
+    currency: string;
+    indirectCostPercentage: number;
+}
+
 export interface Project {
   id: string;
   organizationId: string; // Multitenant
@@ -224,6 +260,11 @@ export interface Project {
   // NEW: Project Specific Resource Availability
   laborForce?: ProjectLaborDefinition[]; // Available individual workers
   assignedCrews?: ProjectCrewDefinition[]; // Available crews
+  
+  // Supabase/Legacy compatibility
+  location?: string;
+  config?: ProjectConfig;
+  taskIds?: string[];
 }
 
 export interface ProjectTemplate {

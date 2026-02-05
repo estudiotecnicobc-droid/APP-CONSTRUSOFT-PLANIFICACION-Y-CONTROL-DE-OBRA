@@ -1,6 +1,7 @@
 
 import { useState, useCallback } from 'react';
 import { useERP } from '../context/ERPContext';
+import { useAuthRole } from './useAuthRole'; 
 import { GoogleGenAI } from "@google/genai";
 import { calculateUnitPrice } from '../services/calculationService';
 
@@ -11,20 +12,52 @@ interface Message {
   timestamp: Date;
 }
 
+const FORBIDDEN_PATTERNS = [
+  /ignore previous instructions/i,
+  /system prompt/i,
+  /sueldos? gerencia/i,
+  /salarios? directivos?/i,
+  /claves? de acceso/i,
+  /admin password/i,
+  /drop table/i,
+  /select \* from users/i
+];
+
 export const useAIAgent = () => {
   const { project, tasks, yieldsIndex, materialsMap, toolYieldsIndex, toolsMap, laborCategoriesMap, crewsMap, taskCrewYieldsIndex } = useERP();
+  const { role } = useAuthRole();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // --- CONTEXT BUILDER (Dynamic RAG) ---
+  const validateQuery = (text: string): { isValid: boolean; error?: string } => {
+    if (text.length > 500) return { isValid: false, error: "Consulta demasiado larga (Máx 500 caracteres)." };
+    
+    for (const pattern of FORBIDDEN_PATTERNS) {
+      if (pattern.test(text)) {
+        return { isValid: false, error: "🛡️ Su consulta ha sido bloqueada por los protocolos de seguridad de la empresa (Política de Privacidad)." };
+      }
+    }
+    return { isValid: true };
+  };
+
   const buildProjectContext = () => {
-    // 1. Análisis de Costos Top 15 Tareas
+    const canSeeCosts = role === 'admin' || role === 'engineering';
+
     const taskAnalysis = project.items.map(item => {
       const task = tasks.find(t => t.id === item.taskId);
       if (!task) return null;
-      const analysis = calculateUnitPrice(task, yieldsIndex, materialsMap, toolYieldsIndex, toolsMap, taskCrewYieldsIndex, crewsMap, laborCategoriesMap);
-      const totalCost = analysis.totalUnitCost * item.quantity;
       
+      let unitPrice = 0;
+      let totalCost: number | string = 0;
+
+      if (canSeeCosts) {
+        const analysis = calculateUnitPrice(task, yieldsIndex, materialsMap, toolYieldsIndex, toolsMap, taskCrewYieldsIndex, crewsMap, laborCategoriesMap);
+        unitPrice = analysis.totalUnitCost;
+        totalCost = unitPrice * item.quantity;
+      } else {
+        totalCost = "RESTRINGIDO";
+      }
+
       const standardLabor = task.standardYields?.labor?.[0]?.hhPerUnit || 0;
       const currentYieldHH = task.yieldHH || 0;
       
@@ -32,19 +65,20 @@ export const useAIAgent = () => {
         name: task.name,
         category: task.category,
         quantity: item.quantity,
-        totalCost,
-        unitPrice: analysis.totalUnitCost,
+        totalCost: totalCost,
+        unitPrice: canSeeCosts ? unitPrice : "RESTRINGIDO",
         yieldData: {
             standard: standardLabor,
             current: currentYieldHH,
             deviation: standardLabor > 0 ? ((currentYieldHH - standardLabor) / standardLabor) * 100 : 0
         }
       };
-    }).filter(Boolean).sort((a,b) => (b?.totalCost || 0) - (a?.totalCost || 0)).slice(0, 15);
+    }).filter(Boolean).sort((a,b) => (typeof b?.totalCost === 'number' ? b.totalCost : 0) - (typeof a?.totalCost === 'number' ? a.totalCost : 0)).slice(0, 15);
 
-    const totalBudget = taskAnalysis.reduce((acc, t) => acc + (t?.totalCost || 0), 0);
+    const totalBudget = canSeeCosts ? taskAnalysis.reduce((acc, t) => acc + (typeof t?.totalCost === 'number' ? t.totalCost : 0), 0) : "CONFIDENCIAL";
 
     return JSON.stringify({
+      userRole: role,
       projectName: project.name,
       client: project.client,
       totalEstimatedBudget: totalBudget,
@@ -58,6 +92,15 @@ export const useAIAgent = () => {
   };
 
   const sendMessage = useCallback(async (text: string) => {
+    const validation = validateQuery(text);
+    if (!validation.isValid) {
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', text, timestamp: new Date() }]);
+      setTimeout(() => {
+        setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'model', text: validation.error!, timestamp: new Date() }]);
+      }, 500);
+      return;
+    }
+
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', text, timestamp: new Date() };
     setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
@@ -66,28 +109,22 @@ export const useAIAgent = () => {
       const contextData = buildProjectContext();
       
       const systemInstruction = `
-        Actúa como un 'AI Project Manager' experto en Ingeniería de Costos y Planificación de Obras (Metodología Chandías y Coscarella).
+        Actúa como un 'AI Project Manager' experto en Ingeniería de Costos.
         Estás integrado en el ERP 'Construsoft'.
+        
+        PERFIL DE SEGURIDAD DEL USUARIO ACTUAL:
+        Rol: ${role?.toUpperCase() || 'DESCONOCIDO'}
         
         DATOS DEL PROYECTO ACTUAL (CONTEXTO):
         ${contextData}
 
+        REGLAS DE SEGURIDAD (MANDATORIAS):
+        1. **Privacidad de Datos:** Si el usuario tiene rol 'FOREMAN' (Capataz) o 'CLIENT' (Cliente), NO reveles costos unitarios, márgenes de beneficio o totales financieros aunque los deduzcas. Si preguntan, responde: "Sus permisos actuales no permiten visualizar información financiera detallada".
+        2. **Scope:** Solo responde sobre este proyecto específico.
+        3. **No Alucinaciones:** Si el dato dice "RESTRINGIDO" o "CONFIDENCIAL", no intentes adivinarlo.
+
         TU OBJETIVO:
-        Analizar estos datos y responder preguntas estratégicas.
-
-        REGLAS DE COMPORTAMIENTO:
-        1. **Fundamentación Técnica:** Usa fórmulas de ingeniería.
-           - Duración = (Cantidad * Rendimiento HH) / (Tamaño Cuadrilla * Jornada).
-           - Costo Directo = Materiales + Mano de Obra + Equipos.
-        2. **Análisis de Desvíos:** Si preguntas por problemas, busca tareas donde 'yieldData.deviation' sea alto.
-           - Si el rendimiento actual (current) > estándar, es una ineficiencia (pérdida).
-           - Si el rendimiento actual < estándar, es un ahorro (o error de estimación).
-        3. **Formato:** Usa Markdown. Usa negritas para KPIs (ej: **$50,000**). Usa listas para enumerar hallazgos.
-        4. **Seguridad:** NO inventes datos. Si no está en el JSON de contexto, di que no tienes esa información. NO menciones otros proyectos.
-        5. **Brevedad:** Sé conciso y ejecutivo. Ve al grano.
-
-        EJEMPLO DE RESPUESTA:
-        "Analizando el rubro **Estructuras**, detecto que el ítem 'Hormigón H21' tiene un sobrecosto del **15%**. Esto se debe a que estamos usando un rendimiento de **12hh/m3** cuando el estándar de Chandías sugiere **10hh/m3**. Recomiendo revisar la composición de la cuadrilla."
+        Analizar estos datos y responder preguntas estratégicas acorde al nivel de acceso del usuario.
       `;
 
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -124,13 +161,13 @@ export const useAIAgent = () => {
       setMessages(prev => [...prev, { 
           id: crypto.randomUUID(), 
           role: 'model', 
-          text: "⚠️ Lo siento, hubo un error al procesar tu consulta técnica. Verifica tu conexión o la API Key.", 
+          text: "⚠️ Error de conexión segura con el Agente. Intente nuevamente.", 
           timestamp: new Date() 
       }]);
     } finally {
       setIsLoading(false);
     }
-  }, [project, tasks, yieldsIndex, messages]);
+  }, [project, tasks, yieldsIndex, messages, role]);
 
   return { messages, sendMessage, isLoading };
 };
